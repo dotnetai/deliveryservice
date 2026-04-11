@@ -206,7 +206,7 @@ async def update_order(id: int, order: OrderModel, current_user: User = Depends(
 
 @order_router.patch('/{id}/update-status', status_code=status.HTTP_200_OK)
 async def update_order_status(id: int, order: OrderStatusModel, current_user: User = Depends(get_current_user)):
-    """Update user order's status"""
+    """Update a user order's status"""
     if current_user.is_staff:
         order_to_update = session.query(Order).filter(Order.id == id).first()
         order_to_update.order_statuses = order.order_statuses
