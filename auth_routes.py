@@ -1,22 +1,27 @@
-from fastapi import APIRouter, status, Depends
+from fastapi import APIRouter, status, Depends, Request
 from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import HTTPException
 from fastapi.security import OAuth2PasswordBearer
 import bcrypt
 from jose import JWTError, jwt
 from sqlalchemy import or_
+from sqlalchemy.orm import Session
+
+from dependencies import get_db
 from schemas import SignUpModel, LoginModel
 from database import session, engine
 from models import User
 from dotenv import load_dotenv
 import os
 from datetime import datetime, timedelta
+from database import get_tenant_session
 
 
 auth_router = APIRouter(
     prefix="/auth"
 )
 
+# Fallback global session (eski kod uchun)
 session = session(bind=engine)
 
 # Config
@@ -34,8 +39,12 @@ def create_token(data: dict, expires_delta: timedelta) -> str:
     return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
 
 
-async def get_current_user(token: str = Depends(oauth2_scheme)):
-    """Boshqa routelarda himoya uchun ishlatish: Depends(get_current_user)"""
+async def get_current_user(token: str = Depends(oauth2_scheme), request: Request = None):
+    """
+    Tenant-aware current user.
+    Agar request mavjud bo'lsa — tenant session ishlatadi,
+    aks holda global session ishlatadi.
+    """
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         username: str = payload.get("sub")
@@ -44,7 +53,14 @@ async def get_current_user(token: str = Depends(oauth2_scheme)):
     except JWTError:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
 
-    user = session.query(User).filter(User.username == username).first()
+    # Tenant session yoki global session
+    if request is not None:
+        tenant = getattr(request.state, "tenant", "public")
+        db = get_tenant_session(tenant)
+    else:
+        db = session
+
+    user = db.query(User).filter(User.username == username).first()
     if user is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED)
     return user
@@ -55,12 +71,12 @@ async def welcome(current_user: User = Depends(get_current_user)):
     return {"message": f"Hello, {current_user.username}"}
 
 @auth_router.post("/signup", status_code=status.HTTP_201_CREATED)
-async def signup(user: SignUpModel):
-    db_email = session.query(User).filter(User.email == user.email).first()
+async def signup(user: SignUpModel, db: Session = Depends(get_db())):
+    db_email = db.query(User).filter(User.email == user.email).first()
     if db_email is not None:
         return HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="User with this email already registered")
 
-    db_username = session.query(User).filter(User.username == user.username).first()
+    db_username = db.query(User).filter(User.username == user.username).first()
     if db_username is not None:
         return HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="User with this username already registered")
 
@@ -72,8 +88,8 @@ async def signup(user: SignUpModel):
         is_staff=user.is_staff
     )
 
-    session.add(new_user)
-    session.commit()
+    db.add(new_user)
+    db.commit()
     data = {
         'id': new_user.id,
         'username': new_user.username,
@@ -92,11 +108,11 @@ async def signup(user: SignUpModel):
     return response_model
 
 @auth_router.post("/login", status_code=status.HTTP_200_OK)
-async def login(user: LoginModel):
+async def login(user: LoginModel, db: Session = Depends(get_db)):
     # db_user = session.query(User).filter(User.username == user.username).first()
 
     # query with email or username
-    db_user = session.query(User).filter(
+    db_user = db.query(User).filter(
         or_(
             User.username == user.username_or_email,
             User.email == user.username_or_email
@@ -132,7 +148,7 @@ async def login(user: LoginModel):
 
 
 @auth_router.get("/login/refresh")
-async def refresh_token(token: str = Depends(oauth2_scheme)):
+async def refresh_token(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         username = payload.get("sub")
@@ -149,7 +165,7 @@ async def refresh_token(token: str = Depends(oauth2_scheme)):
             detail="Invalid Token"
         )
 
-    db_user = session.query(User).filter(User.username == username).first()
+    db_user = db.query(User).filter(User.username == username).first()
     if db_user is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

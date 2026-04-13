@@ -1,9 +1,10 @@
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.encoders import jsonable_encoder
 from starlette import status
-
-from auth_routes import get_current_user, session
-from models import User
+from sqlalchemy.orm import Session
+from auth_routes import get_current_user
+from dependencies import get_db
+from models import User, Product
 from schemas import OrderModel, OrderStatusModel
 from models import Order
 
@@ -16,14 +17,27 @@ async def welcome_page(current_user: User = Depends(get_current_user)):
     return {"This is order route page. User": current_user.username}
 
 @order_router.post("/make", status_code=status.HTTP_201_CREATED)
-async def make_order(order: OrderModel, current_user: User = Depends(get_current_user)):
+async def make_order(
+        order: OrderModel,
+        current_user: User = Depends(get_current_user),
+        db: Session = Depends(get_db)
+):
+
+    product = db.query(Product).filter(Product.id == order.product_id).first()
+    if product is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Product with id {order.product_id} not found"
+        )
+
     new_order = Order(
         quantity = order.quantity,
         product_id = order.product_id
     )
     new_order.user = current_user
-    session.add(new_order)
-    session.commit()
+    db.add(new_order)
+    db.commit()
+    db.refresh(new_order)
 
     response = {
         "success": True,
@@ -45,10 +59,13 @@ async def make_order(order: OrderModel, current_user: User = Depends(get_current
     return jsonable_encoder(response)
 
 @order_router.get('/list', status_code=status.HTTP_200_OK)
-async def list_all_orders(current_user: User = Depends(get_current_user)):
+async def list_all_orders(
+        current_user: User = Depends(get_current_user),
+        db: Session = Depends(get_db)
+):
     # Bu barcha buyurtmalar ro'yhatini qaytaradi
     if current_user.is_staff:
-        orders = session.query(Order).all()
+        orders = db.query(Order).all()
         custom_data = [
             {
                 "id": order.id,
@@ -76,10 +93,14 @@ async def list_all_orders(current_user: User = Depends(get_current_user)):
     )
 
 @order_router.get('/{id}', status_code=status.HTTP_200_OK)
-async def get_order_by_id(id: int, current_user: User = Depends(get_current_user)):
+async def get_order_by_id(
+        id: int,
+        current_user: User = Depends(get_current_user),
+        db: Session = Depends(get_db)
+):
     # Get an order by its ID
     if current_user.is_staff:
-        order = session.query(Order).filter(Order.id == id).first()
+        order = db.query(Order).filter(Order.id == id).first()
         if order:
             custom_order = {
                     "id": order.id,
@@ -139,13 +160,17 @@ async def get_user_orders(current_user: User = Depends(get_current_user)):
     return jsonable_encoder(custom_data)
 
 @order_router.get('/user/order/{id}', status_code=status.HTTP_200_OK)
-async def get_user_order_by_id(id: int, current_user: User = Depends(get_current_user)):
+async def get_user_order_by_id(
+        id: int,
+        current_user: User = Depends(get_current_user),
+        db: Session = Depends(get_db)
+):
     """
     Get user order by id
     :param current_user:
     :return:
     """
-    order = session.query(Order).filter(Order.id == id, Order.user == current_user).first()
+    order = db.query(Order).filter(Order.id == id, Order.user == current_user).first()
     # orders = current_user.orders
     if order:
         order_data = {
@@ -173,13 +198,18 @@ async def get_user_order_by_id(id: int, current_user: User = Depends(get_current
         )
 
 @order_router.put('/{id}/update', status_code=status.HTTP_200_OK)
-async def update_order(id: int, order: OrderModel, current_user: User = Depends(get_current_user)):
+async def update_order(
+        id: int,
+        order: OrderModel,
+        current_user: User = Depends(get_current_user),
+        db: Session = Depends(get_db)
+):
     """
     Update user order by fields : quantity and product_id
     :param current_user:
     :return:
     """
-    order_to_update = session.query(Order).filter(Order.id == id).first()
+    order_to_update = db.query(Order).filter(Order.id == id).first()
     if order_to_update.user != current_user:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -188,7 +218,8 @@ async def update_order(id: int, order: OrderModel, current_user: User = Depends(
 
     order_to_update.quantity = order.quantity
     order_to_update.product_id = order.product_id
-    session.commit()
+    db.commit()
+    db.refresh(order_to_update)
 
     custom_response = {
         "success": True,
@@ -205,12 +236,17 @@ async def update_order(id: int, order: OrderModel, current_user: User = Depends(
 
 
 @order_router.patch('/{id}/update-status', status_code=status.HTTP_200_OK)
-async def update_order_status(id: int, order: OrderStatusModel, current_user: User = Depends(get_current_user)):
+async def update_order_status(
+        id: int,
+        order: OrderStatusModel,
+        current_user: User = Depends(get_current_user),
+        db: Session = Depends(get_db)
+):
     """Update a user order's status"""
     if current_user.is_staff:
-        order_to_update = session.query(Order).filter(Order.id == id).first()
+        order_to_update = db.query(Order).filter(Order.id == id).first()
         order_to_update.order_statuses = order.order_statuses
-        session.commit()
+        db.commit()
 
         custom_response = {
             "success": True,
@@ -225,9 +261,13 @@ async def update_order_status(id: int, order: OrderStatusModel, current_user: Us
 
 
 @order_router.delete('/{id}/delete', status_code=status.HTTP_204_NO_CONTENT)
-async def delete_order(id: int, current_user: User = Depends(get_current_user)):
+async def delete_order(
+        id: int,
+        current_user: User = Depends(get_current_user),
+        db: Session = Depends(get_db)
+):
     """Delete an order of user"""
-    order = session.query(Order).filter(Order.id == id).first()
+    order = db.query(Order).filter(Order.id == id).first()
     if order.user != current_user:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -240,8 +280,8 @@ async def delete_order(id: int, current_user: User = Depends(get_current_user)):
             detail="You cannot delete transit or shipped orders"
         )
 
-    session.delete(order)
-    session.commit()
+    db.delete(order)
+    db.commit()
 
     custom_response = {
         "success": True,
