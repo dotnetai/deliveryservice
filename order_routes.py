@@ -171,7 +171,6 @@ async def get_user_order_by_id(
     :return:
     """
     order = db.query(Order).filter(Order.id == id, Order.user == current_user).first()
-    # orders = current_user.orders
     if order:
         order_data = {
             "id": order.id,

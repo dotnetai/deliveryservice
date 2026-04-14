@@ -109,8 +109,6 @@ async def signup(user: SignUpModel, db: Session = Depends(get_db())):
 
 @auth_router.post("/login", status_code=status.HTTP_200_OK)
 async def login(user: LoginModel, db: Session = Depends(get_db)):
-    # db_user = session.query(User).filter(User.username == user.username).first()
-
     # query with email or username
     db_user = db.query(User).filter(
         or_(
