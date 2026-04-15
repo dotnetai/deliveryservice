@@ -4,12 +4,12 @@ from fastapi.exceptions import HTTPException
 from fastapi.security import OAuth2PasswordBearer
 import bcrypt
 from jose import JWTError, jwt
-from sqlalchemy import or_
+from sqlalchemy import or_, text
 from sqlalchemy.orm import Session
 
 from dependencies import get_db
 from schemas import SignUpModel, LoginModel
-from database import session, engine
+# from database import session, engine
 from models import User
 from dotenv import load_dotenv
 import os
@@ -21,8 +21,8 @@ auth_router = APIRouter(
     prefix="/auth"
 )
 
-# Fallback global session (eski kod uchun)
-session = session(bind=engine)
+# # Fallback global session (eski kod uchun)
+# session = session(bind=engine)
 
 # Config
 load_dotenv()
@@ -53,12 +53,8 @@ async def get_current_user(token: str = Depends(oauth2_scheme), request: Request
     except JWTError:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
 
-    # Tenant session yoki global session
-    if request is not None:
-        tenant = getattr(request.state, "tenant", "public")
-        db = get_tenant_session(tenant)
-    else:
-        db = session
+    tenant = getattr(request.state, "tenant", "public")
+    db = get_tenant_session(tenant)
 
     user = db.query(User).filter(User.username == username).first()
     if user is None:
@@ -72,6 +68,10 @@ async def welcome(current_user: User = Depends(get_current_user)):
 
 @auth_router.post("/signup", status_code=status.HTTP_201_CREATED)
 async def signup(user: SignUpModel, db: Session = Depends(get_db)):
+    # 🔍 DEBUG: Check active schema
+    current_schema = db.execute(text("SELECT current_schema()")).scalar()
+    print("ACTIVE SCHEMA:", current_schema)
+
     db_email = db.query(User).filter(User.email == user.email).first()
     if db_email is not None:
         return HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="User with this email already registered")

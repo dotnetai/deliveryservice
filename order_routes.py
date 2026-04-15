@@ -34,10 +34,10 @@ async def make_order(
         quantity = order.quantity,
         product_id = order.product_id
     )
-    new_order.user = current_user
+    new_order.user_id = current_user.id
     db.add(new_order)
     db.commit()
-    db.refresh(new_order)
+    # db.refresh(new_order)
 
     response = {
         "success": True,

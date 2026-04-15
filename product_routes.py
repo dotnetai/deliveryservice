@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.encoders import jsonable_encoder
 from starlette import status
 from sqlalchemy.orm import Session
-from auth_routes import get_current_user, session
+from auth_routes import get_current_user
 from dependencies import get_db
 from models import User, Product
 from schemas import ProductModel
@@ -26,7 +26,7 @@ async def create_product(
 
         db.add(new_product)
         db.commit()
-        db.refresh(new_product)
+        # db.refresh(new_product)
         data = {
             "success": True,
             "code": status.HTTP_201_CREATED,
