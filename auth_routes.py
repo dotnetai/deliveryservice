@@ -71,7 +71,7 @@ async def welcome(current_user: User = Depends(get_current_user)):
     return {"message": f"Hello, {current_user.username}"}
 
 @auth_router.post("/signup", status_code=status.HTTP_201_CREATED)
-async def signup(user: SignUpModel, db: Session = Depends(get_db())):
+async def signup(user: SignUpModel, db: Session = Depends(get_db)):
     db_email = db.query(User).filter(User.email == user.email).first()
     if db_email is not None:
         return HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="User with this email already registered")

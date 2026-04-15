@@ -12,7 +12,7 @@ admin_router = APIRouter(
 @admin_router.post("/tenant/create")
 async def create_tenant(
         tenant_name: str,
-        current_user: User = Depends(get_current_user())
+        current_user: User = Depends(get_current_user)
 ):
     """Yangi tenant (company/organization) yaratish — faqat superadmin"""
     if not current_user.is_staff:
