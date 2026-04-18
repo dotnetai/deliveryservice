@@ -52,12 +52,15 @@ def get_tenant_session(tenant: str):
 #         print(f"✅ Tables created in schema '{tenant}'")
 
 def create_tenant_schema(tenant: str):
-    """Create schema + run all migrations for a new tenant."""
+    """
+    Create a new PostgreSQL schema for the tenant and run Alembic migrations
+    so that users / products / orders tables are created inside it.
+    """
     if not tenant.replace("_", "").isalnum():
         raise ValueError(f"Invalid tenant name: {tenant}")
 
+    # ── 1. Create the schema ─────────────────────────────────────────────────
     with engine.begin() as conn:
-        # Check it doesn't already exist
         existing = conn.execute(
             text("SELECT schema_name FROM information_schema.schemata WHERE schema_name = :t"),
             {"t": tenant}
@@ -65,12 +68,13 @@ def create_tenant_schema(tenant: str):
         if existing:
             raise ValueError(f"Tenant '{tenant}' already exists")
 
-        # Create the schema
-        conn.execute(text(f"CREATE SCHEMA IF NOT EXISTS {tenant}"))
+        conn.execute(text(f"CREATE SCHEMA {tenant}"))
         print(f"✅ Schema '{tenant}' created")
 
     # Run Alembic migrations scoped to this new tenant
     # Alembic's env.py will pick up the new schema automatically
     alembic_cfg = Config("alembic.ini")
+    alembic_cfg.set_main_option("target_schema", tenant)
     command.upgrade(alembic_cfg, "head")
-    print(f"✅ Migrations applied to '{tenant}'")
+
+    print(f"✅ Tables created in schema '{tenant}'")
